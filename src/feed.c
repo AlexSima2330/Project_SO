@@ -11,6 +11,7 @@ void menu() {
     printf("1 - Subscrever a um tópico\n");
     printf("2 - Enviar mensagem para um tópico\n");
     printf("3 - Sair\n");
+     printf("teste");
     printf("Opção: ");
 }
 
