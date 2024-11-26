@@ -12,9 +12,6 @@ void menu() {
     printf("2 - Enviar mensagem para um tópico\n");
     printf("3 - Sair\n");
     printf("Opção: ");
-
-    printf("Opção: ");
-   
 }
 
 int main() {
