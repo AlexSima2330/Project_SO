@@ -11,7 +11,6 @@ void menu() {
     printf("1 - Subscrever a um tópico\n");
     printf("2 - Enviar mensagem para um tópico\n");
     printf("3 - Sair\n");
-     printf("teste");
     printf("Opção: ");
 }
 
@@ -19,32 +18,40 @@ int main() {
     char fifo_cli[40];
     Pedido p;
     Resposta r;
+    int fd_cli;
 
     sprintf(fifo_cli, FIFO_CLI, getpid());
     mkfifo(fifo_cli, 0600);
 
     int fd_manager = open(FIFO_SRV, O_WRONLY);
     if (access(FIFO_SRV, F_OK) != 0) {
-    printf("[Feed] O manager não está ativo.\n");
-    unlink(fifo_cli);
-    return 1;
-}
-    printf("Digite o seu username: ");
-    scanf("%s", p.username);
-    strcpy(p.comando, "login");
-    p.pid = getpid();
-
-    write(fd_manager, &p, sizeof(Pedido));
-
-    int fd_cli = open(fifo_cli, O_RDONLY);
-    read(fd_cli, &r, sizeof(Resposta));
-    close(fd_cli);
-
-    if (strcmp(r.resposta, "OK") != 0) {
-        printf("[Feed] Username já em uso. Tente novamente.\n");
+        printf("[Feed] O manager não está ativo.\n");
         unlink(fifo_cli);
         return 1;
     }
+
+    do {
+        printf("Digite o seu nome: ");
+        scanf("%s", p.username);
+
+        if (strlen(p.username) >= 20){
+            printf("[Feed] Erro: O nome de utilizador ultrupassa o número de caracteres permitido. \n");
+            continue; // volta a percorrer o ciclo do incio
+        }
+
+        strcpy(p.comando, "login");
+        p.pid = getpid();
+
+        write(fd_manager, &p, sizeof(Pedido));
+
+        fd_cli = open(fifo_cli, O_RDONLY);
+        read(fd_cli, &r, sizeof(Resposta));
+        close(fd_cli);
+
+        if(strcmp(r.resposta, "OK") != 0){
+            printf("[Feed] Username já está em uso. Tente novamente.\n");
+        }
+    } while (strcmp(r.resposta, "OK") != 0);
 
     printf("[Feed] Identificação aceita! Bem-vindo, %s.\n", p.username);
 
