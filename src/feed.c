@@ -32,23 +32,48 @@ int main() {
 
     do {
         printf("Digite o seu nome: ");
-        scanf("%s", p.username);
-
-        if (strlen(p.username) >= 20){
-            printf("[Feed] Erro: O nome de utilizador ultrupassa o número de caracteres permitido. \n");
-            continue; // volta a percorrer o ciclo do incio
+        if (fgets(p.username, sizeof(p.username), stdin) == NULL) {
+            printf("[Feed] Erro ao ler o input. Tente novamente.\n");
+            continue;
         }
 
+        // Remove o caractere de nova linha '\n', se existir
+        p.username[strcspn(p.username, "\n")] = '\0';
+
+        // Verifica se o nome está vazio
+        if (strlen(p.username) == 0) {
+            printf("[Feed] Erro: O nome de utilizador não pode estar vazio.\n");
+            continue;
+        }
+
+        // Verifica se o comprimento do nome é válido
+        if (strlen(p.username) >= 19) {
+            printf("[Feed] Erro: O nome de utilizador ultrapassa o número de caracteres permitido (19).\n");
+             int c;
+            while ((c = getchar()) != '\n' && c != EOF); // Descarta o resto do input
+            continue;
+        }
+
+        // Verifica se o nome contém espaços
+        if (strchr(p.username, ' ') != NULL) {
+            printf("[Feed] Erro: O nome de utilizador não pode conter espaços.\n");
+            continue;
+        }
+
+        // Envia o pedido ao manager
         strcpy(p.comando, "login");
         p.pid = getpid();
-
         write(fd_manager, &p, sizeof(Pedido));
 
         fd_cli = open(fifo_cli, O_RDONLY);
+        if (fd_cli == -1) {
+            perror("[Feed] Erro ao abrir o pipe do cliente");
+            continue;
+        }
         read(fd_cli, &r, sizeof(Resposta));
         close(fd_cli);
 
-        if(strcmp(r.resposta, "OK") != 0){
+        if (strcmp(r.resposta, "OK") != 0) {
             printf("[Feed] Username já está em uso. Tente novamente.\n");
         }
     } while (strcmp(r.resposta, "OK") != 0);
