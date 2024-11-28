@@ -5,15 +5,41 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "comunicacao.h"
+#include <pthread.h>
 
 void menu() {
     printf("\nEscolha uma opção:\n");
     printf("1 - Subscrever a um tópico\n");
     printf("2 - Enviar mensagem para um tópico\n");
     printf("3 - Sair\n");
-     printf("teste");
+    printf("teste");
     printf("Opção: ");
 }
+
+void *thread_read(void *arg) {
+    char fifo_cli[40];
+    sprintf(fifo_cli, FIFO_CLI, getpid()); // Cria o nome do FIFO exclusivo baseado no PID
+    int fd = open(fifo_cli, O_RDONLY); // Abre o FIFO exclusivo para leitura
+
+    if (fd == -1) {
+        perror("[Feed] Erro ao abrir o FIFO para leitura");
+        pthread_exit(NULL);
+    }
+
+    Mensagem m;
+    while (1) {
+        if (read(fd, &m, sizeof(Mensagem)) > 0) {
+            // Exibe a mensagem recebida no terminal
+            printf("\n[Feed] Nova mensagem no tópico '%s': %s (de %s)\n",
+                   m.topic, m.body, m.username);
+        }
+    }
+
+    close(fd);
+    return NULL;
+}
+
+
 
 int main() {
     char fifo_cli[40];
@@ -22,6 +48,10 @@ int main() {
 
     sprintf(fifo_cli, FIFO_CLI, getpid());
     mkfifo(fifo_cli, 0600);
+
+    pthread_t tid_read;
+    pthread_create(&tid_read, NULL, thread_read, NULL);
+
 
     int fd_manager = open(FIFO_SRV, O_WRONLY);
     if (access(FIFO_SRV, F_OK) != 0) {
