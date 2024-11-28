@@ -84,47 +84,59 @@ void processar_pedido(Pedido *p) {
 
 
     // Processa o comando "subscribe"
-    else if (strcmp(p->comando, "subscribe") == 0) {
-        int found = 0;
+   
+else if (strcmp(p->comando, "subscribe") == 0) {
+    int found = 0;
 
-        // Verifica se o tópico já existe
-        for (int i = 0; i < num_topicos; i++) {
-            if (strcmp(topicos[i].name, p->topic) == 0) {
-                found = 1; // Tópico já existe
-                strcpy(r.resposta, "Tópico já existe");
-                break;
+    // Verifica se o tópico já existe
+    for (int i = 0; i < num_topicos; i++) {
+        if (strcmp(topicos[i].name, p->topic) == 0) {
+            found = 1; // Tópico já existe
+            strcpy(r.resposta, "Tópico subscrito com sucesso!");
+
+            // Envia mensagens persistentes do tópico para o feed
+            for (int j = 0; j < topicos[i].num_mensagens; j++) {
+                Mensagem *m = &topicos[i].mensagens[j];
+                if (m->time_to_live > 0) { // Mensagem ainda válida
+                    int fd_feed = open(fifo_cli, O_WRONLY);
+                    if (fd_feed != -1) {
+                        write(fd_feed, m, sizeof(Mensagem)); // Envia a mensagem
+                        close(fd_feed);
+                        printf("[Manager] Mensagem enviada para '%s': '%s'\n", p->username, m->body);
+                    }
+                }
             }
+            break;
         }
-
-        // Se o tópico não existir, cria-o
-        if (!found) {
-            if (num_topicos < MAX_TOPICS) {
-                strcpy(topicos[num_topicos].name, p->topic);
-                topicos[num_topicos].num_mensagens = 0; // Inicializa o número de mensagens no tópico
-                num_topicos++;
-                printf("[Manager] Novo tópico '%s' criado automaticamente durante a subscrição.\n", p->topic);
-            } else {
-                strcpy(r.resposta, "Erro: Limite de tópicos atingido!");
-                write(fd_cli, &r, sizeof(Resposta));
-                close(fd_cli);
-                return;
-            }
-        }
-
-        // Associa o usuário ao tópico
-        for (int i = 0; i < num_usuarios; i++) {
-            if (strcmp(usuarios[i].username, p->username) == 0) {
-                strcpy(usuarios[i].subscribed_topics[usuarios[i].num_topics], p->topic);
-                usuarios[i].num_topics++;
-                strcpy(r.resposta, "Subscrito com sucesso!");
-                write(fd_cli, &r, sizeof(Resposta));
-                close(fd_cli);
-                return;
-            }
-        }
-
-        strcpy(r.resposta, "Erro: Usuário não encontrado!");
     }
+
+    // Se o tópico não existir, cria-o
+    if (!found) {
+        if (num_topicos < MAX_TOPICS) {
+            strcpy(topicos[num_topicos].name, p->topic);
+            topicos[num_topicos].num_mensagens = 0;
+            num_topicos++;
+            printf("[Manager] Novo tópico '%s' criado automaticamente durante a subscrição.\n", p->topic);
+            strcpy(r.resposta, "Novo tópico criado e subscrito com sucesso!");
+        } else {
+            strcpy(r.resposta, "Erro: Limite de tópicos atingido!");
+        }
+    }
+
+    // Associa o usuário ao tópico
+    for (int i = 0; i < num_usuarios; i++) {
+        if (strcmp(usuarios[i].username, p->username) == 0) {
+            strcpy(usuarios[i].subscribed_topics[usuarios[i].num_topics], p->topic);
+            usuarios[i].num_topics++;
+            break;
+        }
+    }
+
+    write(fd_cli, &r, sizeof(Resposta));
+    close(fd_cli);
+}
+
+
 
     // Processa o comando "msg"
     else if (strcmp(p->comando, "msg") == 0) {
@@ -196,53 +208,82 @@ void processar_pedido(Pedido *p) {
 }
 
  void salvar_mensagens() {
-    FILE *arquivo = fopen("mensagens_persistentes.txt", "w");
+    // Obtemos o nome do ficheiro a partir da variável de ambiente
+    const char *filename = getenv("MSG_FICH");
+    if (!filename) {
+        filename = "mensagens_persistentes.txt"; // Valor padrão caso a variável não esteja definida
+    }
+
+    FILE *arquivo = fopen(filename, "w");
     if (!arquivo) {
-        perror("Erro ao abrir o arquivo de mensagens");
+        perror("[Manager] Erro ao abrir o ficheiro de mensagens para salvaguarda");
         return;
     }
 
+    // Itera sobre todos os tópicos e mensagens
     for (int i = 0; i < num_topicos; i++) {
         for (int j = 0; j < topicos[i].num_mensagens; j++) {
             Mensagem *m = &topicos[i].mensagens[j];
-            if (m->time_to_live > 0) {
+            if (m->time_to_live > 0) { // Salva apenas mensagens com TTL restante
                 fprintf(arquivo, "%s %s %d %s\n", m->topic, m->username, m->time_to_live, m->body);
             }
         }
     }
+
     fclose(arquivo);
+    printf("[Manager] Mensagens persistentes salvaguardadas em '%s'.\n", filename);
 }
 
+
 void carregar_mensagens() {
-    FILE *arquivo = fopen("mensagens_persistentes.txt", "r");
+    const char *filename = getenv("MSG_FICH");
+    if (!filename) {
+        filename = "mensagens_persistentes.txt";
+    }
+
+    FILE *arquivo = fopen(filename, "r");
     if (!arquivo) {
-        perror("Nenhum arquivo de mensagens encontrado");
+        printf("[Manager] Nenhum ficheiro de mensagens encontrado.\n");
         return;
     }
+
+    printf("[Manager] Recuperando mensagens persistentes de '%s'.\n", filename);
 
     while (!feof(arquivo)) {
         Mensagem m;
         if (fscanf(arquivo, "%s %s %d %[^\n]", m.topic, m.username, &m.time_to_live, m.body) == 4) {
-            int i;
-            for (i = 0; i < num_topicos; i++) {
-                if (strcmp(topicos[i].name, m.topic) == 0) {
-                    break;
+            if (m.time_to_live > 0) { // Mensagem ainda válida
+                // Verifica se o tópico já existe
+                int i;
+                for (i = 0; i < num_topicos; i++) {
+                    if (strcmp(topicos[i].name, m.topic) == 0) {
+                        break;
+                    }
                 }
-            }
 
-            if (i == num_topicos && num_topicos < MAX_TOPICS) {
-                strcpy(topicos[num_topicos].name, m.topic);
-                topicos[num_topicos].num_mensagens = 0;
-                num_topicos++;
-            }
+                // Se o tópico não existir, cria-o
+                if (i == num_topicos && num_topicos < MAX_TOPICS) {
+                    strcpy(topicos[num_topicos].name, m.topic);
+                    topicos[num_topicos].num_mensagens = 0;
+                    num_topicos++;
+                }
 
-            if (i < num_topicos) {
-                topicos[i].mensagens[topicos[i].num_mensagens++] = m;
+                // Adiciona a mensagem ao tópico
+                if (i < num_topicos) {
+                    if (topicos[i].num_mensagens < MAX_MESSAGES) {
+                        topicos[i].mensagens[topicos[i].num_mensagens++] = m;
+                        printf("[Manager] Mensagem recuperada: Tópico '%s', Autor '%s', TTL %d, Corpo '%s'\n",
+                               m.topic, m.username, m.time_to_live, m.body);
+                    }
+                }
             }
         }
     }
+
     fclose(arquivo);
 }
+
+
 
 
 
@@ -256,26 +297,41 @@ void *thread_scanf(void *arg) {
         scanf("%s", comando);
 
         if (strcmp(comando, "close") == 0) {
-          printf("[Manager] Salvando mensagens antes de encerrar...\n");
-          salvar_mensagens();
-          printf("[Manager] Encerrando...\n");
-          exit(0);
+            printf("[Manager] Encerrando...\n");
+            salvar_mensagens();
+            exit(0);
         } else if (strcmp(comando, "status") == 0) {
             printf("[Manager] Número de usuários: %d\n", num_usuarios);
             printf("[Manager] Número de tópicos: %d\n", num_topicos);
-             } else if (strcmp(comando, "reset") == 0) { // Novo comando para reset
-                num_usuarios = 0;
-                num_topicos = 0;
-                memset(usuarios, 0, sizeof(usuarios)); // Limpa o array de usuários
-                memset(topicos, 0, sizeof(topicos));   // Limpa o array de tópicos
-                printf("[Manager] Todos os dados foram resetados.\n");
-            } else {
-                printf("[Manager] Comando '%s' não reconhecido.\n", comando);
-            }
-        }
+       } else if (strcmp(comando, "reset") == 0) {
+            num_usuarios = 0;
+            num_topicos = 0;
 
-                return NULL;
+            // Limpa os usuários
+            for (int i = 0; i < MAX_USERS; i++) {
+                memset(usuarios[i].username, 0, sizeof(usuarios[i].username));
+                memset(usuarios[i].subscribed_topics, 0, sizeof(usuarios[i].subscribed_topics));
+                usuarios[i].num_topics = 0;
+                usuarios[i].pid = 0;
             }
+
+            // Limpa os tópicos
+            for (int i = 0; i < MAX_TOPICS; i++) {
+                memset(topicos[i].name, 0, sizeof(topicos[i].name));
+                memset(topicos[i].mensagens, 0, sizeof(topicos[i].mensagens));
+                topicos[i].num_mensagens = 0;
+            }
+
+            printf("[Manager] Todos os dados foram resetados.\n");
+        }
+ else {
+            printf("[Manager] Comando '%s' não reconhecido.\n", comando);
+        }
+    }
+
+    return NULL;
+}
+
 
 void *thread_timer(void *arg) {
     while (1) {
@@ -309,7 +365,7 @@ void *thread_timer(void *arg) {
 
 
 int main() {
-    
+    carregar_mensagens();
     mkfifo(FIFO_SRV, 0600); // Criação do FIFO principal
 
 
@@ -337,6 +393,7 @@ int main() {
     pthread_join(tid_read, NULL);
     pthread_join(tid_scanf, NULL);
 
+    salvar_mensagens();
     close(fd_manager); // Fecha o descritor do FIFO principal
     return 0;
 }
