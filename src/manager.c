@@ -7,19 +7,6 @@
 #include "comunicacao.h"
 #include <pthread.h>
 
-typedef struct {
-    char username[20];                   // Nome do usuário
-    char subscribed_topics[MAX_TOPICS][20]; // Tópicos subscritos
-    int num_topics;   
-     pid_t pid;                      // Número de tópicos subscritos
-} Usuario;
-
-typedef struct {
-    char name[20];                       // Nome do tópico
-    Mensagem mensagens[MAX_MESSAGES];    // Mensagens do tópico
-    int num_mensagens;                   // Quantidade de mensagens no tópico
-} Topico;
-
 void processar_pedido(Pedido *p);
 
 Usuario usuarios[MAX_USERS];
