@@ -36,4 +36,6 @@ typedef struct {
     int num_mensagens;            // Quantidade de mensagens enviadas
 } Resposta;
 
+ 
+
 #endif
