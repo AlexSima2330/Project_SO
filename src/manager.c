@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include "comunicacao.h"
+#include <errno.h>
 
 #define MAX_USERS 10
 #define MAX_TOPICS 20
@@ -51,6 +52,7 @@ void *thread_read(void *arg) {
 }
 
 void *thread_scanf(void *arg) {
+    (void)arg;
     char comando[100];
     printf("[Manager] Digite um comando:\n");
 
@@ -79,16 +81,14 @@ void *thread_scanf(void *arg) {
             printf("[Manager] Tentando notificar feed do usuário removido (%s)...\n", fifo_cli);
 
             int fd_cli = open(fifo_cli, O_WRONLY | O_NONBLOCK);
-            if (fd_cli != -1) {
-                Resposta r;
-                strcpy(r.resposta, "Você foi removido da plataforma. O programa será encerrado.");
-                write(fd_cli, &r, sizeof(Resposta));
-                close(fd_cli);
-                printf("[Manager] Feed do usuário '%s' notificado com sucesso.\n", username_to_remove);
+       if (fd_cli == -1) {
+        if (errno == ENXIO || errno == ENOENT) { // FIFO inexistente ou não conectado
+            printf("[Manager] O feed '%s' não está mais ativo. FIFO: %s\n", username_to_remove, fifo_cli);
             } else {
-                perror("[Manager] Erro ao notificar feed do usuário removido");
+            perror("[Manager] Erro ao notificar feed do usuário removido");
             }
-
+            continue; // Passa para o próximo feed
+            }
             // Remover o usuário da lista de usuários
             for (int k = i; k < num_usuarios - 1; k++) {
                 usuarios[k] = usuarios[k + 1];
@@ -101,19 +101,27 @@ void *thread_scanf(void *arg) {
                 sprintf(fifo_feed, FIFO_CLI, usuarios[j].pid);
                 printf("[Manager] Tentando notificar feed do usuário '%s'...\n", usuarios[j].username);
 
-                int fd_feed = open(fifo_feed, O_WRONLY | O_NONBLOCK);
+                int fd_feed = open(fifo_feed, O_WRONLY);
                 if (fd_feed != -1) {
                     Resposta r;
                     sprintf(r.resposta, "Usuário '%s' foi removido da plataforma.", username_to_remove);
-                    write(fd_feed, &r, sizeof(Resposta));
+                    if (write(fd_feed, &r, sizeof(Resposta)) == -1) {
+                        perror("[Manager] Erro ao escrever no FIFO do feed");
+                    } else {
+                        printf("[Manager] Feed do usuário '%s' notificado com sucesso.\n", usuarios[j].username);
+                    }
                     close(fd_feed);
-                    printf("[Manager] Feed do usuário '%s' notificado com sucesso.\n", usuarios[j].username);
                 } else {
-                    perror("[Manager] Erro ao notificar outros feeds");
+                    if (errno == ENOENT) {
+                        printf("[Manager] FIFO do feed do usuário '%s' não encontrado. O feed pode estar inativo.\n", usuarios[j].username);
+                    } else {
+                        perror("[Manager] Erro ao abrir FIFO do feed");
+                    }
                 }
             }
 
             printf("[Manager] Utilizador '%s' removido com sucesso.\n", username_to_remove);
+
             break;
         }
     }
@@ -156,6 +164,7 @@ void *thread_scanf(void *arg) {
 
 
 void *thread_timer(void *arg) {
+    (void)arg;
     while (1) {
         sleep(1);
         for (int i = 0; i < num_topicos; i++) {

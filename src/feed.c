@@ -46,19 +46,18 @@ void *thread_read(void *arg) {
     }
 
     Resposta r;
-    while (1) {
+    while (continuar_lendo) {
         if (read(fd, &r, sizeof(Resposta)) > 0) {
             printf("\n[Feed] Notificação do manager: %s\n", r.resposta);
 
             // Verifica se a mensagem indica que o feed foi removido
             if (strstr(r.resposta, "Você foi removido da plataforma.") != NULL) {
                 printf("[Feed] O programa será encerrado.\n");
-                close(fd);
-                exit(0); // Encerra o programa
+                continuar_lendo = 0;
+                break;
             }
         } else {
-            // Trata a desconexão do FIFO
-            perror("[Feed] Erro ao ler do FIFO (o manager pode ter sido encerrado)");
+            perror("[Feed] Erro ao ler do FIFO");
             close(fd);
             pthread_exit(NULL);
         }
@@ -67,6 +66,8 @@ void *thread_read(void *arg) {
     close(fd);
     return NULL;
 }
+
+
 
 
 
@@ -133,7 +134,7 @@ int main(int argc, char *argv[]) {
     // Iniciar a thread de leitura
     pthread_t tid_read;
     continuar_lendo = 1;
-    //pthread_create(&tid_read, NULL, thread_read, NULL);
+    pthread_create(&tid_read, NULL, thread_read, NULL);
 
     // Loop de comandos do utilizador
     char comando[256];
